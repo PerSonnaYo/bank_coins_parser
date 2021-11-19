@@ -1,2 +1,0 @@
-py telega.py
-pause
