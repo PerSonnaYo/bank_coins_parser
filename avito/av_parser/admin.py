@@ -1,8 +1,10 @@
 from django.contrib import admin
 from .forms import ProductForm
+from .forms import CommentForm
 from .models import Product
 from .models import Buffer
-
+from .models import Comments
+from django.utils.html import format_html
 
 # Register your models here.
 PRICE_FILTER_STEPS = 10
@@ -47,3 +49,30 @@ class BufferAdmin(admin.ModelAdmin):
                     'price',
                     )
 
+@admin.register(Comments)
+class CommentAdmin(admin.ModelAdmin):
+
+    list_display = (
+            'dated',
+            'name',
+            'show_firm_url1',
+            'show_firm_url',
+            'current_price',
+            'status',
+            'stack',
+            'post1_price',
+            'name_saler',
+            'comment_id',
+            'buy',
+        )
+    def show_firm_url(self, obj):
+        return format_html("<a href='{url}'>{url}</a>", url=obj.url_saler)
+
+    show_firm_url.short_description = "Firm URL"
+
+    def show_firm_url1(self, obj):
+        return format_html("<a href='{url}'>{url}</a>", url=obj.url_lot)
+
+    show_firm_url1.short_description = "Firm1 URL"
+    list_filter = ('dated', 'status',)
+    form = CommentForm

@@ -109,8 +109,13 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
-TOKEN = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-CHAT_ID = 11111111
+TOKEN = "1900452471:AAF2f_9qlETGW56BMQvMfD0s1C9efk8DQiw"
+CHAT_ID = 586779742
+
+VK_TOKEN = "630495e12e0e5e25179b4b8d64180f89f32c585a1de4b04908c65913844e09b960b6d1119430e452e3f40"
+VK_GROUP_INFO = {"-129785877": "https://vk.com/auctiondeneg", "-46543400": "https://vk.com/nymu3matuka", "-143736084": "https://vk.com/numismatique", "-124250208": "https://vk.com/auctionpz", "-159807615": "https://vk.com/auctioncentrnumizmat"}
+TELEGA_TOKEN_BOT = "5059352156:AAGaimLgeMGEhPUWrhyO_GB-8HICn30qnTo"
+UPLOAD_LIMIT = 100
 
 LOGGING = {
     'version': 1,
