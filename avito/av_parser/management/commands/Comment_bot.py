@@ -11,6 +11,7 @@ from aiogram.utils import executor
 from .comment_bot.Config import Config as cnf
 from .comment_bot import sql_block as SQL
 from .comment_bot import pars_functions as pf
+from .comment_bot import handle as ha
 import vk
 import re
 import datetime
@@ -26,11 +27,12 @@ from django.conf import settings
 #TODO добавить сообщение о победе
 #TODO автоматические сообщения после победы боту
 #TODO сформировать таблицу ответов с суммой и затем выслать ответ с окончательной ценой для оплаты кроме почты в боте и продавцу
-#TODO если ставка не отработала коммент йд добавлять последней ставки
 #TODO обрабатывать страт только со 100 рублей
 #TODO убрать возможность менять ставку на первом лоте
 #TODO добавить обработку дурацкой группы
 #TODO апгрейд из таблицы пропускаемые лоты новый статус
+#TODO ошибка с фотками
+#TODO переделать искать послдеднюю ставку при выводе лота, предпоследняя ненужна, добавить проверку на текст, сохранять куррент прайс и коммент_йд, вызвать коммент йд проверить на перебитие, если перебито вызвать снова и найти последний коммент, затем перебить его, если нет, то сразу пребить и сохранить новый коммент йд
 conf = cnf()
 
 logger = getLogger(__name__)
@@ -59,52 +61,78 @@ async def cmd_start(message: Message):
 
 @dp.message_handler(commands=['dd'])
 async def handle_start(message: Message):
+    await SQL.delete_lot()
     count = await SQL.ret_count()
     while(count > 0):
         time.sleep(5)
-        p = Comments.objects.filter(status='proccess')
-        id = p[0]#группа
-            # post = p[1]#номер поста
-            # comment_id = new_sl[lot][2]
-            # comments = API.wall.getComments(
-            #         owner_id=id,
-            #         post_id=post,
-            #         need_likes=0,
-            #         count=6,
-            #         sort='desc',
-            #         comment_id=f'{comment_id}'
-            #     )
-            # idx = 0
-            # if len(comments['items']) == 0:
-            #     curr_price = 100
-            #     second_price = 0
-            # elif len(comments['items']) < 3:
-            #     curr_price, second_price = last_stack_first(comments, idx)
-            # else:
-            #     curr_price, second_price = last_stack_second(comments, idx)
-            #     #после ставки возвращаем коммент ид который будем добавлять к запросу
-            # # if (datetime.datetime.now() - new_sl[lot][2] > datetime.timedelta(seconds=10)):
-            # #     return await message.reply("Победа в торгах")
-            # if second_price >= curr_price:#если поставлена ставка меньше чем последняя
-            #     mass[lot] = [0, 0, 0]
-            #     mass[lot][1] = new_sl[lot][1]
-            #     mass[lot][0] = new_sl[lot][0]
-            #     mass[lot][2] = new_sl[lot][2]
-            # elif new_sl[lot][1] >= curr_price: #если ставка не перебита
-            #     mass[lot] = [0, 0, 0]
-            #     mass[lot][1] = new_sl[lot][1]
-            #     mass[lot][0] = new_sl[lot][0]
-            #     mass[lot][2] = new_sl[lot][2]
-            # elif new_sl[lot][0] > curr_price:#если надо сделать новую ставку
-            #     mass[lot] = [0, 0, 0]
-            #     mass[lot][1] = curr_price + 50
-            #     mass[lot][2] = 0
-            #     mass[lot][0] = new_sl[lot][0]
-            # else:
-            #     comment_id = comments['items'][idx + 1]['id']
-            #     mass[lot][1] = 0
-            #     mass[lot][2] = comment_id
-            #     mass[lot][0] = 0
+        items = await SQL.ret_list('proccess')
+        for item in items:
+            post = item.url_lot.split('_')
+            id = post[0].split('-')
+            id = f'-{id[1]}'#номер группы
+            post = post[1]#номер поста
+            comment_id = item.comment_id#номер последнего комментария
+            comments = API.wall.getComments(
+                owner_id=id,
+                post_id=post,
+                need_likes=0,
+                count=6,
+                sort='desc',
+                сomment_id=comment_id,
+            )
+            idx = 0
+            if len(comments['items']) == 0:
+                curr_price = 100
+                second_price = 0
+            elif len(comments['items']) < 3:
+                curr_price, second_price = ha.last_stack_first(comments, idx)
+            else:
+                curr_price, second_price = ha.last_stack_second(comments, idx)
+                #после ставки возвращаем коммент ид который будем добавлять к запросу
+            if second_price >= curr_price:#если новая ставка меньше чем последняя моя ставка
+                if curr_price == item.current_price:#если максимальная ставка моя
+                    if ha.check_win(comments, idx):
+                        item.status = 'OK'
+                else:#если максимальная ставк не моя
+                    if (curr_price < item.stack):#если можно сделать еще ставку
+                        # item.comment_id = ha.make_stack(API, post, curr_price + 50, id)
+                        item.current_price = curr_price + 50
+                    else:#если ставку уже не сделаешь
+                        item.status = '---'
+                        item.current_price = curr_price
+                        item.comment_id = comments['items'][idx + 1]['id']#коммент йд последней ставки
+            elif item.current_price == curr_price: #если ставка не перебита
+                if ha.check_win(comments, idx):
+                    item.status = 'OK'
+            elif item.current_price < curr_price:#если надо сделать новую ставку
+                if curr_price >= item.stack:#если ставку уже поздно делать
+                    item.status = '---'
+                    item.current_price = curr_price
+                    item.comment_id = comments['items'][idx + 1]['id']  # коммент йд последней ставки
+                else:#делаем ставку
+                    # item.comment_id = ha.make_stack(API, post, curr_price + 50, id)
+                    item.current_price = curr_price + 50
+            await SQL.sql_block(item.url_lot, curr_price=item.current_price, status=item.status, comment_id=item.comment_id)
+        items = Comments.objects.filter(status='---')
+        for item in items:
+            post = item.url_lot.split('_')
+            id = post[0].split('-')
+            id = f'-{id[1]}'  # номер группы
+            post = post[1]  # номер поста
+            comment_id = item.comment_id  # номер последнего комментария
+            comments = API.wall.getComments(
+                owner_id=id,
+                post_id=post,
+                need_likes=0,
+                count=6,
+                sort='desc',
+                comment_id=comment_id,
+            )
+            idx = 0
+            item.comment_id = comments['items'][0]['text']#сообщение о победе здесь
+            #если коммент йд имеет признак победы
+        count = await SQL.ret_count()
+
 # Добавляем возможность отмены, если пользователь передумал заполнять
 @dp.message_handler(state='*', commands='cancel')
 @dp.message_handler(Text(equals='отмена', ignore_case=True), state='*')
@@ -115,45 +143,6 @@ async def cancel_handler(message: Message, state: FSMContext):
 
     await state.finish()
     await message.reply('ОК')
-
-def last_stack_first(comments, idx):
-    'Возврат значений комментов в случае если их не больше двух'
-    try:
-        curr_price = int(comments['items'][idx]['text'])
-        try:
-            second_price = int(comments['items'][idx + 1]['text'])#если ставка + ставка или ставка + коммент
-        except:
-            second_price = 0 #если одна ставка
-    except:
-        try:#если коммент + ставка
-            idx += 1
-            curr_price = int(comments['items'][idx]['text'])
-            second_price = 0
-        except:
-            curr_price = 100
-            second_price = 0#если один коммент
-    return curr_price, second_price
-
-def last_stack_second(comments, idx):
-    try:
-        curr_price = int(comments['items'][idx]['text'])
-    except:
-        try:
-            idx += 1
-            curr_price = int(comments['items'][idx]['text'])
-        except:
-            idx += 1
-            curr_price = int(comments['items'][idx]['text'])
-    try:
-        second_price = int(comments['items'][idx + 1]['text'])
-    except:
-        try:
-            idx += 1
-            second_price = int(comments['items'][idx + 2]['text'])
-        except:
-            idx += 1
-            second_price = int(comments['items'][idx + 3]['text'])
-    return curr_price, second_price
 
 # Сюда приходит ответ с именем
 @dp.message_handler(content_types=['text'])
@@ -240,8 +229,8 @@ async def process_stack(call: CallbackQuery, state: FSMContext):
                                 chat_id=call.message.chat.id)
     if action == 'skip':
         await bot.send_message(call.message.chat.id, "Пропуск")
+        await SQL.sql_block(url_lot=url, status='DELETED')
         await state.finish()
-        SQL.delete_lot(url)
         SLIP = True
     if action == "stack":
         # Сделать ставку

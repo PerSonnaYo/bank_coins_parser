@@ -74,6 +74,11 @@ def ret_count():
     return Comments.objects.filter(Q(status='proccess') | Q(status='---')).count()
 
 @sync_to_async
-def delete_lot(url_lot):
-    # entries = Entry.objects.filter(Q(entryType__icontains='МРТ') | Q(entryType__icontains='МСКТ'))
-    Comments.objects.filter(url_lot=url_lot).delete()
+def delete_lot():
+    items = list(Comments.objects.filter(status='DELETED'))
+    for item in items:
+        item.delete()
+
+@sync_to_async
+def ret_list(param):
+    return Comments.objects.filter(status=param)
