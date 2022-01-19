@@ -26,14 +26,24 @@ def pars_name(urlname, API):
     return (fio, saler)
 
 def pars_discription(text):
-    description = text.split('Описание:')[1]
-    description = description.split('Антиснайпер:')[0]
+    try:
+        description = text.split('Описание:')[1]
+        description = description.split('Антиснайпер:')[0]
+    except:
+        description = 'Coin'
     return description
 
 def pars_photo(post):
-    foto = post['attachments']
-    url_photo1 = foto[0]['photo']['sizes'][8]['url']  # первое фото
-    url_photo2 = foto[1]['photo']['sizes'][8]['url']  # второе фото
+    try:
+        foto = post['attachments']
+        url_photo1 = foto[0]['photo']['sizes'][8]['url']  # первое фото
+        try:
+            url_photo2 = foto[1]['photo']['sizes'][8]['url']  # второе фото
+        except:
+            url_photo2 = 'https://a.d-cd.net/K5QQNtmo-k-AYNo5jDMn0BfYcIQ-960.jpg'
+    except:
+        url_photo1 = 'https://a.d-cd.net/K5QQNtmo-k-AYNo5jDMn0BfYcIQ-960.jpg'
+        url_photo2 = 'https://a.d-cd.net/K5QQNtmo-k-AYNo5jDMn0BfYcIQ-960.jpg'
     return (url_photo1, url_photo2)
 
 def make_kb(url_post):

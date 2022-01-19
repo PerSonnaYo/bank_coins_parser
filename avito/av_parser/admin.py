@@ -58,6 +58,7 @@ class CommentAdmin(admin.ModelAdmin):
             'show_firm_url1',
             'show_firm_url',
             'current_price',
+            'my_current_price',
             'status',
             'stack',
             'post1_price',

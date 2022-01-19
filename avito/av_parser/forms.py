@@ -28,6 +28,7 @@ class CommentForm(forms.ModelForm):
             'url_lot',
             'url_saler',
             'current_price',
+            'my_current_price',
             'status',
             'stack',
             'post1_price',

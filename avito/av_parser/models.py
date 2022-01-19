@@ -80,6 +80,12 @@ class Comments(models.Model):
         verbose_name='Текущая цена',
         default=0,
     )
+
+    my_current_price = models.PositiveIntegerField(
+        verbose_name='Моя текущая цена',
+        default=0,
+    )
+
     stack = models.PositiveIntegerField(
         verbose_name='Ставка',
         default=0,
