@@ -102,7 +102,7 @@ class Comments(models.Model):
         default='No',
     )
     def __str__(self):
-        return f'#{self.url_lot} {self.status} {self.stack}'
+        return f'#{self.url_lot} {self.name_saler} {self.my_current_price}'
 
     class Meta:
         verbose_name= 'Таблица торгов в ВК'

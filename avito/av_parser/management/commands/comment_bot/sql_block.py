@@ -3,12 +3,18 @@ from logging import getLogger
 from django.core.management.base import CommandError
 from av_parser.models import Comments
 from django.db.models import Q
-import time
+import time as t
 from . import handle as ha
+from datetime import datetime
+import pytz
+from datetime import time
+from django.conf import settings
 
 logger = getLogger(__name__)
 
 ONSALE = True
+STOP = False
+COUNTER = 0
 
 @sync_to_async
 def sql_block(url_lot, dated = None, url_saler = None, status = None,
@@ -87,12 +93,14 @@ def delete_lot():
 
 @sync_to_async
 def ret_list(API, step):
+    global COUNTER
+    global STOP
     count = Comments.objects.filter(status='proccess').count()
     while(count > 0):
-        time.sleep(5)
+        # time.sleep(5)
         items = Comments.objects.filter(status='proccess')
         for item in items:
-            # time.sleep(5)
+            t.sleep(5)
             print('fgrgrgrgrg')
             post = item.url_lot.split('_')
             id = post[0].split('-')
@@ -131,16 +139,39 @@ def ret_list(API, step):
                     item.status = 'proccess'
                     item.my_current_price = curr_price + step
             item.save()
+        if STOP:#остановка процессов обработки
+            COUNTER += 1
+            if COUNTER == 2:
+                STOP = False
+                COUNTER = 0
+            break
         count = Comments.objects.filter(status='proccess').count()
 
 @sync_to_async
-def check_finish(API):
+def check_finish(API, bot):
     #TODO добавить время после 22 по мск
+    global STOP
+    global COUNTER
+    while True:
+        moscow_time = datetime.now(pytz.timezone('Europe/Moscow'))
+        current_time = time(moscow_time.hour, moscow_time.minute)
+        need_time = time(22, 0)
+        print('2')
+        if (current_time >= need_time):
+            break
+        t.sleep(30)
+        if STOP:
+            COUNTER += 1
+            if COUNTER == 2:
+                STOP = False
+                COUNTER = 0
+            return
     count = Comments.objects.filter(Q(status='proccess') | Q(status='---')).count()
     while(count > 0):
-        time.sleep(5)
+        print('3')
         items = Comments.objects.filter(Q(status='proccess') | Q(status='---'))
         for item in items:
+            t.sleep(5)
             post = item.url_lot.split('_')
             id = post[0].split('-')
             id = f'-{id[1]}'  # номер группы
@@ -151,7 +182,18 @@ def check_finish(API):
                 if 'победитель' in com['text']:
                     if item.status == 'proccess':
                         item.status = 'OK'
+                        bot.send_message(settings.CHAT_ID, item)
                     else:
                         item.status = 'DEFEAT'
                     break
             item.save()
+        if STOP:
+            COUNTER += 1
+            if COUNTER == 2:
+                STOP = False
+                COUNTER = 0
+            break
+
+def cancel_work():
+    global STOP
+    STOP = True

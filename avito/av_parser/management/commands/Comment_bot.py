@@ -31,14 +31,14 @@ import threading
 #TODO обрабатывать страт только со 100 рублей
 #TODO убрать возможность менять ставку на первом лоте
 #TODO добавить обработку дурацкой группы
-#TODO апгрейд из таблицы пропускаемые лоты новый статус
-#TODO ошибка с фотками
+#TODO try
 conf = cnf()
 
 logger = getLogger(__name__)
 
 SLIP = False
 STEP = 50
+
 bot = conf.Tbot
 API = conf.Vapi
 
@@ -66,84 +66,18 @@ async def handle_start(message: Message):
 
     await asyncio.gather(
         SQL.ret_list(API, STEP),
-        SQL.check_finish(API, STEP))
-
-    # await SQL.ret_list(API)
-    # await SQL.check_finish(API)
-    # await asyncio.sleep(2)
-    # while(count > 0):
-    #     time.sleep(5)
-    #     items = await SQL.ret_list('proccess')
-    #     for item in items:
-    #         print('fgrgrgrgrg')
-    #         post = item.url_lot.split('_')
-    #         id = post[0].split('-')
-    #         id = f'-{id[1]}'#номер группы
-    #         post = post[1]#номер поста
-    #
-    #         comments = ha.get_stacks(API, post=post, id=id)#парсим последние ставки
-    #         curr_price, second_price, comment_id, comment_id_second = ha.discover_last_stack(comments)
-    #             #после ставки возвращаем коммент ид который будем добавлять к запросу
-    #
-    #         if second_price >= curr_price:#если новая ставка меньше чем последняя ставка
-    #             if curr_price == item.my_current_price:#если максимальная ставка моя
-    #                 item.status = 'proccess'
-    #             else:#если максимальная ставк не моя
-    #                 if (curr_price < item.stack):#если можно сделать еще ставку
-    #                     item.comment_id = ha.make_stack(API, post, second_price + 50, id)
-    #                     item.current_price = second_price + 50
-    #                     item.my_current_price = second_price + 50
-    #                     item.status = 'proccess'
-    #                 else:#если ставку уже не сделаешь
-    #                     item.status = '---'
-    #                     item.current_price = second_price
-    #                     item.comment_id = comment_id_second#коммент йд последней ставки
-    #
-    #         elif item.my_current_price == curr_price: #если ставка не перебита
-    #             item.status = 'proccess'
-    #
-    #         elif item.my_current_price < curr_price:#если надо сделать новую ставку
-    #             if curr_price >= item.stack:#если ставку уже поздно делать
-    #                 item.status = '---'
-    #                 item.current_price = curr_price
-    #                 item.comment_id = comment_id  # коммент йд последней ставки
-    #             else:#делаем ставку
-    #                 item.comment_id = ha.make_stack(API, post, curr_price + 50, id)
-    #                 item.current_price = curr_price + 50
-    #                 item.status = 'proccess'
-    #                 item.my_current_price = curr_price + 50
-    #         await SQL.sql_block(item.url_lot, curr_price=item.current_price,
-    #                             status=item.status, comment_id=item.comment_id,
-    #                             my_current_price=item.my_current_price)
-    #     # items = Comments.objects.filter(status='---')
-    #     # for item in items:
-    #     #     post = item.url_lot.split('_')
-    #     #     id = post[0].split('-')
-    #     #     id = f'-{id[1]}'  # номер группы
-    #     #     post = post[1]  # номер поста
-    #     #     comment_id = item.comment_id  # номер последнего комментария
-    #     #     comments = API.wall.getComments(
-    #     #         owner_id=id,
-    #     #         post_id=post,
-    #     #         need_likes=0,
-    #     #         count=6,
-    #     #         sort='desc',
-    #     #         comment_id=comment_id,
-    #     #     )
-    #     #     idx = 0
-    #     #     item.comment_id = comments['items'][0]['text']#сообщение о победе здесь
-    #     #     #если коммент йд имеет признак победы
-    #     count = await SQL.ret_count()
+        SQL.check_finish(API, bot))
 
 # Добавляем возможность отмены, если пользователь передумал заполнять
 @dp.message_handler(state='*', commands='cancel')
 @dp.message_handler(Text(equals='отмена', ignore_case=True), state='*')
 async def cancel_handler(message: Message, state: FSMContext):
     current_state = await state.get_state()
-    if current_state is None:
-        return
+    if current_state is not None:
+        await state.finish()
 
-    await state.finish()
+    # await state.finish()
+    SQL.cancel_work()
     await message.reply('ОК')
 
 # Сюда приходит ответ с именем
@@ -165,43 +99,42 @@ async def date_start(message: Message):
     for i, num in enumerate(groups):
         if hh == True:
             break
-        posts = API.wall.search(
+        posts = API.wall.get(
                 owner_id=num,#номер группы
                 domain=groups[num],#домен группы
-                query="КОРОТКИЙ АУКЦИОН",#фраза, которая есть в описании
-                owners_only=1,
+                filter='owner',
                 count=conf.Vcount,#количество возвращаемых постов
         )
         for post in posts['items']:
 
             #TODO потом убрать
-            if index == 3:
-                hh = True
-                break
-
+            # if index == 4:
+            #     hh = True
+            #     break
+            # print('A')
             SLIP = False
             toxt = post['text']
-            match = re.findall(r'ОКОНЧАНИЕ: (\d+\.\d+\.\d+) года', toxt)#вычленяем дату
+            match = pf.start_pars(toxt)#вычленяем дату
             if len(match) == 0:
                 continue
             if match[0] != find_date:#если даты не соответсвуют
                 continue
 
             url_post = f"{groups[num]}?w=wall{num}_{post['id']}"
-            await SQL.sql_block(url_post, dated=dated)
+            await SQL.sql_block(url_post, dated=dated, status='PP')
             if SQL.ONSALE == False:#проверка есть ли уже в таблице
                 continue
-
+            # print('B')
             curr_stack = ha.get_stacks(API, post=post['id'], id=num)#определяем последнюю ставку
             curr_stack, _, comment_id, _ = ha.discover_last_stack(curr_stack)
 
             post_price = pf.pars_post(toxt)#парсим почту
 
-            urlname = re.findall(r': (.*?)\nСтарт', toxt)
+            urlname = pf.pre_pars_name(toxt)
             fio, saler = pf.pars_name(urlname, API)#парсим имя продавца
 
-            STEP = int(re.findall(r'Шаг: (\d+)', toxt)[0])#Шаг торгов
-
+            STEP = pf.pars_step(toxt)#Шаг торгов
+            # print(STEP)
             await SQL.sql_block(url_post, post_price=post_price, url_saler=saler, status='proccess', name_saler=fio, curr_price=curr_stack, comment_id=comment_id)
 
             description = pf.pars_discription(toxt)#описание лота
@@ -245,11 +178,11 @@ async def process_stack(call: CallbackQuery, state: FSMContext):
         await SQL.sql_block(url_lot=url, status='DELETED')
         await state.finish()
         SLIP = True
-    if action == "stack":
+    if action == "stac":
         # Сделать ставку
         await bot.send_message(call.message.chat.id, "Пожалуйста, укажите ставку.")
         await Form.next()
-    if action == "can_stack":
+    if action == "stoc":
         # Сделать ставку
         await bot.send_message(call.message.chat.id, "Пожалуйста, укажите 2 ставки.")
         await Form.next()
