@@ -56,14 +56,16 @@ def pars_photo(post):
         url_photo2 = 'https://a.d-cd.net/K5QQNtmo-k-AYNo5jDMn0BfYcIQ-960.jpg'
     return (url_photo1, url_photo2)
 
-def make_kb(url_post):
+def make_kb(url_post, fio):
     u1 = f'skip {url_post}'#до 64 символов
     u2 = f'stac {url_post}'
     u3 = f'stoc {url_post}'
+    u4 = f'blac {fio}'
     menu_kb = InlineKeyboardMarkup().row(
         InlineKeyboardButton(text="Пропустить", callback_data=u1),
         InlineKeyboardButton(text="Ставка", callback_data=u2),
-        InlineKeyboardButton(text="Изменить прошлую ставку", callback_data=u3)
+        InlineKeyboardButton(text="Изменить прошлую ставку", callback_data=u3),
+        InlineKeyboardButton(text="В черный список", callback_data=u4)
     )
     return menu_kb
 

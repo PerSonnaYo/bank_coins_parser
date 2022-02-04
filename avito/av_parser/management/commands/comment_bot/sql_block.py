@@ -9,8 +9,11 @@ from datetime import datetime
 import pytz
 from datetime import time
 from django.conf import settings
+from av_parser.models import Salers
+import telepot
 
 logger = getLogger(__name__)
+bot = telepot.Bot(settings.TOKEN)
 
 ONSALE = True
 STOP = False
@@ -93,70 +96,74 @@ def delete_lot():
 
 @sync_to_async
 def ret_list(API, step):
+    #TODO upgrade
     global COUNTER
     global STOP
-    count = Comments.objects.filter(status='proccess').count()
+    count = Comments.objects.filter(Q(status='proccess') | Q(status='---')).count()
     while(count > 0):
         # time.sleep(5)
-        items = Comments.objects.filter(status='proccess')
+        items = Comments.objects.filter(Q(status='proccess') | Q(status='---'))
         for item in items:
             t.sleep(5)
-            print('fgrgrgrgrg')
+            logger.info(f'proccess')
             post = item.url_lot.split('_')
             id = post[0].split('-')
             id = f'-{id[1]}'#номер группы
             post = post[1]#номер поста
 
             comments = ha.get_stacks(API, post=post, id=id)#парсим последние ставки
-            curr_price, second_price, comment_id, comment_id_second = ha.discover_last_stack(comments)
+            curr_price, comment_id, second_price, comment_id_second = ha.last_and_second_stacks(comments)
                 #после ставки возвращаем коммент ид который будем добавлять к запросу
-
             if second_price >= curr_price:#если новая ставка меньше чем последняя ставка
                 if curr_price == item.my_current_price:#если максимальная ставка моя
-                    item.status = 'proccess'
+                    Comments.objects.filter(url_lot=item.url_lot).update(status="proccess")
                 else:#если максимальная ставк не моя
                     if (curr_price < item.stack):#если можно сделать еще ставку
-                        item.comment_id = ha.make_stack(API, post, second_price + step, id)
-                        item.current_price = second_price + step
-                        item.my_current_price = second_price + step
-                        item.status = 'proccess'
+                        Comments.objects.filter(url_lot=item.url_lot).update(status="proccess",
+                            comment_id= ha.make_stack(API, post, second_price + step, id),
+                            current_price = second_price + step,
+                            my_current_price = second_price + step
+                        )
                     else:#если ставку уже не сделаешь
-                        item.status = '---'
-                        item.current_price = second_price
-                        item.comment_id = comment_id_second#коммент йд последней ставки
+                        Comments.objects.filter(url_lot=item.url_lot).update(
+                            status = '---',
+                            current_price = second_price,
+                            comment_id = comment_id_second#коммент йд последней ставки
+                        )
 
             elif item.my_current_price == curr_price: #если ставка не перебита
-                item.status = 'proccess'
-
+                Comments.objects.filter(url_lot=item.url_lot).update(status = 'proccess')
             elif item.my_current_price < curr_price:#если надо сделать новую ставку
                 if curr_price >= item.stack:#если ставку уже поздно делать
-                    item.status = '---'
-                    item.current_price = curr_price
-                    item.comment_id = comment_id  # коммент йд последней ставки
+                    Comments.objects.filter(url_lot=item.url_lot).update(
+                        status = '---',
+                        current_price = curr_price,
+                        comment_id = comment_id  # коммент йд последней ставки
+                     )
                 else:#делаем ставку
-                    item.comment_id = ha.make_stack(API, post, curr_price + step, id)
-                    item.current_price = curr_price + step
-                    item.status = 'proccess'
-                    item.my_current_price = curr_price + step
-            item.save()
+                    Comments.objects.filter(url_lot=item.url_lot).update(
+                        comment_id = ha.make_stack(API, post, curr_price + step, id),
+                        current_price = curr_price + step,
+                        status = 'proccess',
+                        my_current_price = curr_price + step
+                    )
         if STOP:#остановка процессов обработки
             COUNTER += 1
             if COUNTER == 2:
                 STOP = False
                 COUNTER = 0
             break
-        count = Comments.objects.filter(status='proccess').count()
+        count = Comments.objects.filter(Q(status='proccess') | Q(status='---')).count()
 
 @sync_to_async
-def check_finish(API, bot):
-    #TODO добавить время после 22 по мск
+def check_finish(API):
     global STOP
     global COUNTER
     while True:
         moscow_time = datetime.now(pytz.timezone('Europe/Moscow'))
         current_time = time(moscow_time.hour, moscow_time.minute)
         need_time = time(22, 0)
-        print('2')
+        logger.info(f'time_isnt_passing')
         if (current_time >= need_time):
             break
         t.sleep(30)
@@ -168,7 +175,7 @@ def check_finish(API, bot):
             return
     count = Comments.objects.filter(Q(status='proccess') | Q(status='---')).count()
     while(count > 0):
-        print('3')
+        logger.info(f'win_check')
         items = Comments.objects.filter(Q(status='proccess') | Q(status='---'))
         for item in items:
             t.sleep(5)
@@ -179,12 +186,12 @@ def check_finish(API, bot):
 
             comments = ha.get_stacks(API, post=post, id=id, comment_id=item.comment_id)
             for com in comments['items']:
-                if 'победитель' in com['text']:
+                if 'свяжитесь' in com['text'].lower() or 'владельцем' in com['text'].lower():
                     if item.status == 'proccess':
-                        item.status = 'OK'
-                        bot.send_message(settings.CHAT_ID, item)
+                        Comments.objects.filter(url_lot=item.url_lot).update(status = 'OK')
+                        bot.sendMessage(settings.CHAT_ID, f'WIN: {item}')
                     else:
-                        item.status = 'DEFEAT'
+                        Comments.objects.filter(url_lot=item.url_lot).update(status = 'DEFEAT')
                     break
             item.save()
         if STOP:
@@ -197,3 +204,19 @@ def check_finish(API, bot):
 def cancel_work():
     global STOP
     STOP = True
+
+@sync_to_async
+def add_in_black_list(name_saler):
+    try:
+        p = Salers.objects.get(name_saler=name_saler)
+    except Salers.DoesNotExist:
+        p = Salers(name_saler=name_saler)
+        p.save()
+
+@sync_to_async
+def check_black_list(name_saler):
+    try:
+        p = Salers.objects.get(name_saler=name_saler)
+        return True
+    except Salers.DoesNotExist:
+        return False

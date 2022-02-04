@@ -29,9 +29,8 @@ import threading
 #TODO автоматические сообщения после победы боту
 #TODO сформировать таблицу ответов с суммой и затем выслать ответ с окончательной ценой для оплаты кроме почты в боте и продавцу
 #TODO обрабатывать страт только со 100 рублей
-#TODO убрать возможность менять ставку на первом лоте
-#TODO добавить обработку дурацкой группы
-#TODO try
+#TODO добавить двойную клавиатуру
+#TODO добавить telebot
 conf = cnf()
 
 logger = getLogger(__name__)
@@ -99,12 +98,7 @@ async def date_start(message: Message):
     for i, num in enumerate(groups):
         if hh == True:
             break
-        posts = API.wall.get(
-                owner_id=num,#номер группы
-                domain=groups[num],#домен группы
-                filter='owner',
-                count=conf.Vcount,#количество возвращаемых постов
-        )
+        posts = ha.get_postss(API, num, groups, conf.Vcount)
         for post in posts['items']:
 
             #TODO потом убрать
@@ -121,12 +115,12 @@ async def date_start(message: Message):
                 continue
 
             url_post = f"{groups[num]}?w=wall{num}_{post['id']}"
-            await SQL.sql_block(url_post, dated=dated, status='PP')
+            await SQL.sql_block(url_post, dated=dated, )
             if SQL.ONSALE == False:#проверка есть ли уже в таблице
                 continue
             # print('B')
             curr_stack = ha.get_stacks(API, post=post['id'], id=num)#определяем последнюю ставку
-            curr_stack, _, comment_id, _ = ha.discover_last_stack(curr_stack)
+            curr_stack, comment_id, _, _ = ha.last_and_second_stacks(curr_stack)
 
             post_price = pf.pars_post(toxt)#парсим почту
 
@@ -135,21 +129,28 @@ async def date_start(message: Message):
 
             STEP = pf.pars_step(toxt)#Шаг торгов
             # print(STEP)
-            await SQL.sql_block(url_post, post_price=post_price, url_saler=saler, status='proccess', name_saler=fio, curr_price=curr_stack, comment_id=comment_id)
+            await SQL.sql_block(url_post, post_price=post_price, url_saler=saler, status='DELETED', name_saler=fio, curr_price=curr_stack, comment_id=comment_id)
 
             description = pf.pars_discription(toxt)#описание лота
             url_photo1, url_photo2 = pf.pars_photo(post)#парсинг фоток
             # print(url_post)
             await bot.send_message(message.chat.id, description)
-            await bot.send_media_group(message.chat.id, [InputMediaPhoto(url_photo1), InputMediaPhoto(url_photo2)])  # Отсылаем сразу 2 фото
-            menu_kb = pf.make_kb(url_post)#формируем клавиатуру
+            # отправляем фотки
+            while True:
+                try:
+                    await bot.send_media_group(message.chat.id, [InputMediaPhoto(url_photo1), InputMediaPhoto(url_photo2)])  # Отсылаем сразу 2 фото
+                    break
+                except:
+                    time.sleep(2)
+                    continue
+            menu_kb = pf.make_kb(url_post, fio)#формируем клавиатуру
             await Form.job.set()
             index += 1
             logger.debug(f'parsing for {url_post} finished')
             await bot.send_message(
                 chat_id=message.chat.id,
                 reply_markup=menu_kb,
-                text=f"(Шаг:{str(STEP)})\n{post_price}\nПоследняя ставка:{curr_stack}\nПродавец: {fio}\nВыбирете действие ?")
+                text=f"(Шаг:{str(STEP)})\n{post_price}\nПоследняя ставка:{curr_stack}\nПродавец: {fio}\n{url_post}\nВыбирете действие ?")
             while (SLIP == False):#ожидаем выбора
                 await asyncio.sleep(1)
     await bot.send_message(message.chat.id, "Обработка закончилась")
@@ -157,7 +158,7 @@ async def date_start(message: Message):
 
 # Указываем что сделать при нажатии на кнопку,
 # в нашем случаи прислать другую клавиатуру
-@dp.message_handler(lambda message: message.text not in ["Пропустить", "Ставка", "Изменить прошлую ставку"], state=Form.job)
+@dp.message_handler(lambda message: message.text not in ["Пропустить", "Ставка", "Изменить прошлую ставку", "В черный список"], state=Form.job)
 async def comman_invalid(message: Message):
     logger.error(f'invalid command')
     return await message.reply("Не знаю такой команды. Укажи команду кнопкой на клавиатуре")
@@ -175,7 +176,6 @@ async def process_stack(call: CallbackQuery, state: FSMContext):
                                 chat_id=call.message.chat.id)
     if action == 'skip':
         await bot.send_message(call.message.chat.id, "Пропуск")
-        await SQL.sql_block(url_lot=url, status='DELETED')
         await state.finish()
         SLIP = True
     if action == "stac":
@@ -187,6 +187,11 @@ async def process_stack(call: CallbackQuery, state: FSMContext):
         await bot.send_message(call.message.chat.id, "Пожалуйста, укажите 2 ставки.")
         await Form.next()
         await Form.next()
+    if action == "blac":
+        # В черный список
+        await bot.send_message(call.message.chat.id, "ЧС обновлен.")
+        await SQL.add_in_black_list(url)
+        await state.finish()
 
 @dp.message_handler(lambda message: not message.text.isdigit(), state=Form.stack)
 async def stack_invalid(message: Message):
@@ -207,7 +212,7 @@ async def stack(message: Message, state: FSMContext):
         data['stack'] = int(message.text)
     global SLIP
     last_elem = data['job']
-    await SQL.sql_block(data['job'], stack=data['stack']) #создаем общую базу где потом будем делать ставки
+    await SQL.sql_block(data['job'], stack=data['stack'], status='proccess') #создаем общую базу где потом будем делать ставки
     await message.reply("Добавлен лот")
     logger.debug(f'add {data["job"]} finished')
     await state.finish()
@@ -238,7 +243,7 @@ async def stack(message: Message, state: FSMContext):
         return await message.reply("Напиши НормальНую ставку(20000 4000)")
     global SLIP
     last_elem = data['job']
-    await SQL.sql_block(data['job'], stack=data['two_stack'])
+    await SQL.sql_block(data['job'], stack=data['two_stack'], status='proccess')
     await message.reply("Добавлен лот")
     logger.debug(f'add {data["job"]} finished')
     await state.finish()

@@ -106,3 +106,13 @@ class Comments(models.Model):
 
     class Meta:
         verbose_name= 'Таблица торгов в ВК'
+
+class Salers(models.Model):
+    name_saler = models.TextField(
+        verbose_name='Имя продавца',
+    )
+    def __str__(self):
+        return f'#{self.name_saler}'
+
+    class Meta:
+        verbose_name= 'Черный список в ВК'
